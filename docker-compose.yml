@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  docling-indexer:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      # Supabase Configuration
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_STORAGE_BUCKET=${SUPABASE_STORAGE_BUCKET:-documents}
+      
+      # Celery Configuration
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      
+      # Embedding Model Configuration
+      - EMBED_MODEL_ID=${EMBED_MODEL_ID:-sentence-transformers/all-MiniLM-L6-v2}
+      - MAX_TOKENS=${MAX_TOKENS:-512}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-384}
+      
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DEBUG=${DEBUG:-False}
+      
+      # File Processing Configuration
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-104857600}
+    volumes:
+      - ./models:/root/.cache/huggingface  # Cache for downloaded models
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  celery-worker:
+    build: .
+    command: celery -A celery_tasks worker --loglevel=info --concurrency=2 --max-tasks-per-child=10
+    environment:
+      # Supabase Configuration
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_STORAGE_BUCKET=${SUPABASE_STORAGE_BUCKET:-documents}
+      
+      # Celery Configuration
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      
+      # Embedding Model Configuration
+      - EMBED_MODEL_ID=${EMBED_MODEL_ID:-sentence-transformers/all-MiniLM-L6-v2}
+      - MAX_TOKENS=${MAX_TOKENS:-512}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-384}
+    volumes:
+      - ./models:/root/.cache/huggingface  # Cache for downloaded models
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+
