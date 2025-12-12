@@ -13,9 +13,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from indexer.core.config import settings, JOB_STATES, PROCESSING_STAGES
-from indexer.services.db_operations import DatabaseOperations
-from indexer.core.database import get_storage_bucket
 from indexer.services.document_processor import DocumentProcessor
+from shared.core.database import get_supabase_client, get_storage_bucket
+from shared.services.db_operations import DatabaseOperations
 
 # Configure logging
 logging.basicConfig(
@@ -68,7 +68,8 @@ def process_document_task(self, job_id: str, generate_embeddings: bool = True):
         job_id: The job ID to process
         generate_embeddings: Whether to generate embeddings
     """
-    db_ops = DatabaseOperations()
+    # Initialize database operations with shared client
+    db_ops = DatabaseOperations(get_supabase_client())
     
     try:
         logger.info(f"[Task {self.request.id}] Starting document processing for job: {job_id}")
@@ -152,6 +153,48 @@ def process_document_task(self, job_id: str, generate_embeddings: bool = True):
         stored_chunks = db_ops.create_document_chunks_batch(chunks_to_store)
         logger.info(f"[Task {self.request.id}] Stored {len(stored_chunks)} chunks in database")
         
+        # --------------------------------------------------------
+        # METADATA EXTRACTION (New)
+        # --------------------------------------------------------
+        try:
+             # Extract metadata using the processor (re-using the downloaded file content)
+             # Note: processor.extract_metadata expects file path or content. 
+             # We can pass the file path since we have it downloaded locally? 
+             # Wait, storage download returns bytes content. We need to pass file path if extractor needs it?
+             # But processor._process_file downloads? No, process_document handles bytes.
+             # extract_metadata in Processor needs to handle bytes or we save temp file.
+             # Let's save a quick temp file or use the bytes if we modify extractor integration.
+             # The extractor code provided takes `source` which can be path.
+             
+             # Re-downloading might be inefficient, but we have `file_content` in memory.
+             # We need to save it to a temp file for `DocumentExtractor` if it doesn't support bytes directly (it usually prefers paths).
+             
+             import tempfile
+             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file_name).suffix) as tmp_meta_file:
+                 tmp_meta_file.write(file_content)
+                 tmp_meta_path = tmp_meta_file.name
+                 
+             try:
+                 logger.info(f"[Task {self.request.id}] Extracting metadata for: {file_name}")
+                 metadata_result = processor.extract_metadata(source=tmp_meta_path, file_name=file_name)
+                 
+                 # Update document with extracted metadata in the documents table
+                 if metadata_result and doc_id:
+                     # Store the extracted metadata in the documents table's metadata column
+                     db_ops.update_document_metadata(doc_id=doc_id, metadata=metadata_result)
+                     logger.info(f"[Task {self.request.id}] Metadata extracted and saved to documents table: {metadata_result}")
+                 else:
+                     logger.warning(f"[Task {self.request.id}] No metadata extracted or doc_id missing")
+                     
+             finally:
+                 if os.path.exists(tmp_meta_path):
+                     os.remove(tmp_meta_path)
+
+        except Exception as e:
+            logger.warning(f"[Task {self.request.id}] Metadata extraction failed (non-blocking): {str(e)}")
+            
+        # --------------------------------------------------------
+
         # Update job as completed
         db_ops.update_processing_job(
             job_id=job_id,

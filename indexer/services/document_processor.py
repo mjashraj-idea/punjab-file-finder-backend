@@ -17,6 +17,7 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.chunking import HybridChunker
+from docling.document_extractor import DocumentExtractor  # Added for metadata extraction
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from docling_core.transforms.chunker.hierarchical_chunker import (
     DocChunk,
@@ -262,4 +263,76 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             return None
+
+    def extract_metadata(self, source: Union[str, Path], file_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Extract specific metadata from the document using Docling DocumentExtractor.
+        Target fields: case_diary_no, fir_no, ps, date, district
+        
+        Returns:
+            Dictionary with extracted metadata, or empty dict if extraction fails
+        """
+        try:
+            # Set environment variables for Hugging Face to avoid symlinks warning
+            import os
+            os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+            os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
+
+            logger.info(f"Extracting metadata from: {file_name or source}")
+            
+            # Initialize Extractor
+            extractor = DocumentExtractor(allowed_formats=[InputFormat.IMAGE, InputFormat.PDF])
+            
+            # Template for metadata extraction
+            metadata_template = '{"case_diary_no": "string", "fir_no": "float", "ps":"string", "date":"string", "district": "string"}'
+
+            # Extract metadata
+            result = extractor.extract(
+                source=str(source),  # Ensure string path
+                template=metadata_template,
+            )
+            
+            # Process the result - result.pages contains the extracted data
+            extracted_data = {}
+            
+            # Check if result has pages attribute (as shown in user's test code)
+            if hasattr(result, 'pages') and result.pages:
+                # result.pages is typically a list of page results
+                # Aggregate data from all pages or use the first page
+                if isinstance(result.pages, list) and len(result.pages) > 0:
+                    # Get data from first page (or merge all pages)
+                    page_data = result.pages[0]
+                    
+                    # If page_data is a dict, use it directly
+                    if isinstance(page_data, dict):
+                        extracted_data = page_data
+                    # If page_data has attributes, try to convert to dict
+                    elif hasattr(page_data, '__dict__'):
+                        extracted_data = page_data.__dict__
+                    # If it's a string representation, try to parse
+                    elif isinstance(page_data, str):
+                        try:
+                            import json
+                            extracted_data = json.loads(page_data)
+                        except:
+                            # If not JSON, store as raw string
+                            extracted_data = {"raw": page_data}
+                else:
+                    # If pages is not a list, try to access it directly
+                    extracted_data = {"pages": str(result.pages)}
+            else:
+                # If no pages attribute, try to get data directly from result
+                if hasattr(result, '__dict__'):
+                    extracted_data = result.__dict__
+                else:
+                    # Fallback: return string representation
+                    extracted_data = {"raw_extraction": str(result)}
+            
+            logger.info(f"Metadata extracted successfully: {extracted_data}")
+            return extracted_data
+            
+        except Exception as e:
+            logger.error(f"Error extracting metadata: {str(e)}", exc_info=True)
+            return {}
+
 

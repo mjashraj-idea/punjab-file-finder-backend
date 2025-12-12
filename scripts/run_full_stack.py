@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Start all services: FastAPI server and Celery worker
+Start all services: FastAPI server and Celery worker together
+Run this to start the complete application stack
 """
 import subprocess
 import sys
@@ -36,7 +37,7 @@ def check_redis():
 def main():
     """Start all services"""
     print("=" * 60)
-    print("Starting Docling Document Indexer Services - INDEXER MODULE")
+    print("Starting Complete Application Stack")
     print("=" * 60)
     print()
     
@@ -52,9 +53,9 @@ def main():
     scripts_dir = Path(__file__).parent
     
     # Start FastAPI server
-    print("1. Starting FastAPI server on port 8001...")
+    print("1. Starting FastAPI API Server on port 8001...")
     api_process = subprocess.Popen(
-        [sys.executable, str(scripts_dir / "start.py")],
+        [sys.executable, str(scripts_dir / "run_api_server.py")],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
@@ -64,9 +65,9 @@ def main():
     time.sleep(2)
     
     # Start Celery worker
-    print("2. Starting Celery worker...")
+    print("2. Starting Celery Background Worker...")
     worker_process = subprocess.Popen(
-        [sys.executable, str(scripts_dir / "start_worker.py")],
+        [sys.executable, str(scripts_dir / "run_celery_worker.py")],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
@@ -74,14 +75,15 @@ def main():
     
     print()
     print("=" * 60)
-    print("All services started!")
+    print("✅ All services started successfully!")
     print("=" * 60)
     print()
     print("Services running:")
-    print(f"  - Module: INDEXER")
-    print(f"  - FastAPI API: http://localhost:8001")
-    print(f"  - API Docs: http://localhost:8001/docs")
-    print(f"  - Celery Worker: PID {worker_process.pid}")
+    print(f"  📡 FastAPI API Server: http://localhost:8001")
+    print(f"  📚 API Documentation: http://localhost:8001/docs")
+    print(f"  🔐 Auth Module: http://localhost:8001/api/auth")
+    print(f"  📄 Indexer Module: http://localhost:8001/api/indexer")
+    print(f"  ⚙️  Celery Worker: PID {worker_process.pid}")
     print()
     print("Press Ctrl+C to stop all services")
     print()
@@ -94,9 +96,11 @@ def main():
         print("\n\nStopping services...")
         api_process.terminate()
         worker_process.terminate()
-        print("Services stopped.")
+        print("✓ Services stopped.")
 
 
 if __name__ == "__main__":
     main()
+
+
 

@@ -39,7 +39,7 @@ def check_environment():
 def main():
     """Main function to start Celery worker"""
     print("=" * 60)
-    print("Starting Celery Worker - INDEXER MODULE")
+    print("Starting Celery Worker - Document Processing")
     print("=" * 60)
     print()
     
@@ -75,4 +75,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 

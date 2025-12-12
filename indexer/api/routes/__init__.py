@@ -1,4 +1,0 @@
-"""
-API route handlers
-"""
-
