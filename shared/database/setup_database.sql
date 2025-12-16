@@ -147,7 +147,7 @@ GROUP BY status;
 CREATE OR REPLACE FUNCTION search_chunks_by_embedding(
   query_embedding vector(384),
   match_threshold float DEFAULT 0.7,
-  match_count int DEFAULT 10
+  match_count int DEFAULT 1
 )
 RETURNS TABLE (
   id uuid,
@@ -177,7 +177,7 @@ $$;
 -- Function for full-text search
 CREATE OR REPLACE FUNCTION search_chunks_by_text(
   search_query text,
-  match_count int DEFAULT 10
+  match_count int DEFAULT 1
 )
 RETURNS TABLE (
   id uuid,

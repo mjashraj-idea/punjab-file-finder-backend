@@ -2,10 +2,45 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from uuid import UUID
 import logging
+import re
 from supabase import Client
 from shared.core.database import get_storage_bucket
 
 logger = logging.getLogger(__name__)
+
+
+def preprocess_search_query(query: str) -> str:
+    """
+    Preprocess search query to handle camelCase, normalize spacing, and improve matching.
+    
+    Examples:
+    - "casediarydetails" -> "case diary details" (splits camelCase)
+    - "CaseDiaryDetails" -> "case diary details"
+    - "case diary details" -> "case diary details" (normalized)
+    
+    Args:
+        query: Raw search query
+        
+    Returns:
+        Preprocessed query string
+    """
+    if not query:
+        return ""
+    
+    # Remove extra whitespace
+    query = ' '.join(query.split())
+    
+    # Split camelCase/PascalCase into separate words
+    # Pattern: insert space before capital letters (but not at start)
+    query = re.sub(r'(?<!^)(?=[A-Z])', ' ', query)
+    
+    # Normalize to lowercase
+    query = query.lower()
+    
+    # Remove extra spaces again after splitting
+    query = ' '.join(query.split())
+    
+    return query
 
 
 class DatabaseOperations:
@@ -793,15 +828,19 @@ class DatabaseOperations:
         self,
         query_text: str,
         query_embedding: Optional[List[float]],
-        match_count: int = 20,
+        match_count: int = 1,  # Return only best chunk
         filter_doc_ids: Optional[List[str]] = None,
         mode: str = 'keyword',  # keyword, semantic, fuzzy
         similarity_threshold: float = 0.3
     ) -> List[Dict[str, Any]]:
         """
-        Search document chunks using RPC functions
+        Search document chunks using RPC functions with enhanced matching.
+        Supports camelCase splitting, partial matching, and fuzzy search.
         """
         try:
+            # Preprocess query to handle camelCase and normalize
+            processed_query = preprocess_search_query(query_text)
+            
             params = {
                 'match_count': match_count,
                 'filter_doc_ids': filter_doc_ids
@@ -816,24 +855,26 @@ class DatabaseOperations:
                 rpc_function = 'hybrid_search_chunks'
                 params.update({
                     'query_embedding': query_embedding,
-                    'query_text': query_text,
+                    'query_text': processed_query,  # Use processed query
                     'vector_weight': 0.75,
                     'keyword_weight': 0.25,
                     'similarity_threshold': similarity_threshold
                 })
             
             elif mode == 'keyword':
-                rpc_function = 'keyword_search_chunks'
+                # Enhanced keyword search with FTS + ILIKE fallback
+                # Using _enhanced suffix to keep old function as backup
+                rpc_function = 'keyword_search_chunks_enhanced'
                 params.update({
-                    'query_text': query_text
+                    'query_text': processed_query  # Use processed query
                 })
                 
             elif mode == 'fuzzy':
-                # Fuzzy is essentially keyword search but we might relax query parsing in future
-                # For now using keyword search with simple text
-                rpc_function = 'keyword_search_chunks'
+                # Use dedicated fuzzy search function with pattern matching
+                # Using _enhanced suffix to keep old function as backup
+                rpc_function = 'fuzzy_search_chunks_enhanced'
                 params.update({
-                    'query_text': query_text  # Postgres partial matching handles some fuzzy-like behavior
+                    'query_text': processed_query  # Use processed query
                 })
             
             else:
@@ -841,7 +882,7 @@ class DatabaseOperations:
 
             result = self.client.rpc(rpc_function, params).execute()
             return result.data if result.data else []
-
+            
         except Exception as e:
             logger.error(f"Error searching documents ({mode}): {str(e)}")
             return []

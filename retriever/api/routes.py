@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class SearchRequest(BaseModel):
     query: str
     mode: str = "keyword"  # keyword, semantic, fuzzy
-    match_count: int = 20
+    match_count: int = 1  # Return only best chunk
     similarity_threshold: float = 0.1
 
 class SearchResult(BaseModel):
